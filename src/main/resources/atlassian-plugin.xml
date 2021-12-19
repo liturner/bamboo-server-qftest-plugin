@@ -1,0 +1,33 @@
+<atlassian-plugin key="${atlassian.plugin.key}" name="${project.name}" plugins-version="2">
+    <plugin-info>
+        <description>${project.description}</description>
+        <version>${project.version}</version>
+        <vendor name="${project.organization.name}" url="${project.organization.url}" />
+        <param name="plugin-icon">images/pluginIcon.png</param>
+        <param name="plugin-logo">images/pluginLogo.png</param>
+    </plugin-info>
+
+    <!-- add our i18n resource -->
+    <resource type="i18n" name="turnertech.qftest" location="i18n"/>
+
+    <!-- add our web resources -->
+    <web-resource key="qftest-resources" name="qftest Web Resources">
+        <dependency>com.atlassian.auiplugin:ajs</dependency>
+        
+        <resource type="download" name="qftest.css" location="/css/qftest.css"/>
+        <resource type="download" name="qftest.js" location="/js/qftest.js"/>
+        <resource type="download" name="images/" location="/images"/>
+
+        <context>qftest</context>
+    </web-resource>
+
+    <taskType key="runQFTest" name="QF-Test" class="turnertech.qftest.RunQFTest">
+        <description>A task which cleanly integrates QF-Test with Bamboo</description>
+		<category name="test"/>
+		<executable key="qftest"/>
+		<configuration class="turnertech.qftest.RunQFTestConfigurator"/>
+        <resource type="download" name="icon" location="images/pluginLogo80.png"/>
+        <resource type="freemarker" name="edit" location="runQFTest.ftl"/>
+    </taskType>
+
+</atlassian-plugin>
