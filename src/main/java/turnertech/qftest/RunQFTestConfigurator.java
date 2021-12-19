@@ -1,6 +1,7 @@
 package turnertech.qftest;
 
 import com.atlassian.bamboo.task.AbstractTaskConfigurator;
+import com.atlassian.bamboo.task.TaskConfigConstants;
 import com.atlassian.bamboo.task.TaskDefinition;
 import com.atlassian.bamboo.task.TaskRequirementSupport;
 import com.atlassian.bamboo.collections.ActionParametersMap;
@@ -14,6 +15,11 @@ import com.atlassian.plugin.spring.scanner.annotation.imports.ComponentImport;
 import com.atlassian.sal.api.message.I18nResolver;
 import com.google.common.base.Preconditions;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -37,21 +43,6 @@ public class RunQFTestConfigurator extends AbstractTaskConfigurator implements T
     @BambooImport("uiConfigBean")
     @Inject
     protected UIConfigSupport uiConfigSupport;
-	
-    /**
-     * The user selected QF-Test Capability to be used for the task
-     */
-    private static final String QF_EXECUTABLE = "qfTestExecutable";
-        
-    /**
-     * The list of available QF-Test capabilities
-     */
-    private static final String QF_EXECUTABLES = "qfTestExecutables";
-    
-    /**
-     * The prefix for the capability. This is a static value we need for Bamboo
-     */
-    private static final String QF_CAPABILITY_PREFIX = "system.builder.qftest";
     
     /**
      * This setter must be here to support injection!
@@ -79,11 +70,36 @@ public class RunQFTestConfigurator extends AbstractTaskConfigurator implements T
     {
         super.validate(params, errorCollection);
 
-        final String qfTestExecutable = params.getString(QF_EXECUTABLE);
-        if (StringUtils.isEmpty(qfTestExecutable) || qfTestExecutable.equals(i18nResolver.getText("turnertech.qftest.configurator.error.noExecutableField")))
+        final String qfTestExecutable = params.getString(RunQFTestHelper.QF_EXECUTABLE);
+        if (StringUtils.isEmpty(qfTestExecutable))
         {
-            errorCollection.addError(QF_EXECUTABLE, i18nResolver.getText("turnertech.qftest.configurator.error.noExecutable"));
+            errorCollection.addError(RunQFTestHelper.QF_EXECUTABLE, i18nResolver.getText("tt.qftest.executable.error.noExecutable"));
         }
+        
+        
+        final String logOutputFolder = params.getString(RunQFTestHelper.LOG_OUTPUT_FOLDER);
+        if(StringUtils.isEmpty(logOutputFolder)) {
+        	errorCollection.addError(RunQFTestHelper.LOG_OUTPUT_FOLDER, i18nResolver.getText("tt.qftest.logs.error.empty"));
+        } else {
+        	try {
+                Paths.get(logOutputFolder);
+            } catch (InvalidPathException ex) {
+            	errorCollection.addError(RunQFTestHelper.LOG_OUTPUT_FOLDER, i18nResolver.getText("tt.qftest.logs.error.invalidPath"));
+            }
+        }
+        
+        
+        final String qfTestFile = params.getString(RunQFTestHelper.QF_FILE);
+        if(StringUtils.isEmpty(qfTestFile)) {
+        	errorCollection.addError(RunQFTestHelper.QF_FILE, i18nResolver.getText("tt.qftest.file.error.empty"));
+        } else {
+        	try {
+                Paths.get(qfTestFile);
+            } catch (InvalidPathException ex) {
+            	errorCollection.addError(RunQFTestHelper.QF_FILE, i18nResolver.getText("tt.qftest.file.error.invalidPath"));
+            }
+        }
+        
     }
 
     /**
@@ -94,7 +110,13 @@ public class RunQFTestConfigurator extends AbstractTaskConfigurator implements T
     {
         final Map<String, String> config = super.generateTaskConfigMap(params, previousTaskDefinition);
 
-        config.put(QF_EXECUTABLE, params.getString(QF_EXECUTABLE));
+        config.put(RunQFTestHelper.QF_EXECUTABLE, params.getString(RunQFTestHelper.QF_EXECUTABLE));
+        config.put(RunQFTestHelper.LOG_OUTPUT_FOLDER, params.getString(RunQFTestHelper.LOG_OUTPUT_FOLDER));
+        config.put(RunQFTestHelper.LOG_OUTPUT_NAME, params.getString(RunQFTestHelper.LOG_OUTPUT_NAME));
+        config.put(RunQFTestHelper.QF_FILE, params.getString(RunQFTestHelper.QF_FILE));
+        config.put(RunQFTestHelper.QF_VARIABLES, params.getString(RunQFTestHelper.QF_VARIABLES));
+        config.put(RunQFTestHelper.ENV_VARS, params.getString(RunQFTestHelper.ENV_VARS));
+        config.put(TaskConfigConstants.CFG_WORKING_SUBDIRECTORY, params.getString(TaskConfigConstants.CFG_WORKING_SUBDIRECTORY));
 
         return config;
     }
@@ -108,7 +130,8 @@ public class RunQFTestConfigurator extends AbstractTaskConfigurator implements T
         super.populateContextForCreate(context);
         populateContextForCreateAndEdit(context);
         
-
+        context.put(RunQFTestHelper.LOG_OUTPUT_FOLDER, "qftest/logs");
+        context.put(RunQFTestHelper.LOG_OUTPUT_NAME, "+b_+y+M+d+h+m");
     }
 
     /**
@@ -121,7 +144,13 @@ public class RunQFTestConfigurator extends AbstractTaskConfigurator implements T
         populateContextForCreateAndEdit(context);
         
         // Populate saved values
-        context.put(QF_EXECUTABLE, taskDefinition.getConfiguration().get(QF_EXECUTABLE));
+        context.put(RunQFTestHelper.QF_EXECUTABLE, taskDefinition.getConfiguration().get(RunQFTestHelper.QF_EXECUTABLE));
+        context.put(RunQFTestHelper.LOG_OUTPUT_FOLDER, taskDefinition.getConfiguration().get(RunQFTestHelper.LOG_OUTPUT_FOLDER));
+        context.put(RunQFTestHelper.LOG_OUTPUT_NAME, taskDefinition.getConfiguration().get(RunQFTestHelper.LOG_OUTPUT_NAME));
+        context.put(RunQFTestHelper.QF_FILE, taskDefinition.getConfiguration().get(RunQFTestHelper.QF_FILE));
+        context.put(RunQFTestHelper.QF_VARIABLES, taskDefinition.getConfiguration().get(RunQFTestHelper.QF_VARIABLES));
+        context.put(RunQFTestHelper.ENV_VARS, taskDefinition.getConfiguration().get(RunQFTestHelper.ENV_VARS));
+        context.put(TaskConfigConstants.CFG_WORKING_SUBDIRECTORY, taskDefinition.getConfiguration().get(TaskConfigConstants.CFG_WORKING_SUBDIRECTORY));
     }
 
     /**
@@ -132,10 +161,7 @@ public class RunQFTestConfigurator extends AbstractTaskConfigurator implements T
     public void populateContextForCreateAndEdit(@NotNull final Map<String, Object> context)
     {
     	final List<String> qfTestExecutables = uiConfigSupport.getExecutableLabels("qftest");
-        if(qfTestExecutables.isEmpty()) {
-        	qfTestExecutables.add(i18nResolver.getText("turnertech.qftest.configurator.error.noExecutableField"));
-        }
-        context.put(QF_EXECUTABLES, qfTestExecutables);
+        context.put(RunQFTestHelper.QF_EXECUTABLES, qfTestExecutables);
     }
     
 	/**
@@ -145,9 +171,9 @@ public class RunQFTestConfigurator extends AbstractTaskConfigurator implements T
 	 */
 	@Override
 	public Set<Requirement> calculateRequirements(TaskDefinition taskDefinition) {
-		final String qfTestRuntime = taskDefinition.getConfiguration().get(QF_EXECUTABLE);
+		final String qfTestRuntime = taskDefinition.getConfiguration().get(RunQFTestHelper.QF_EXECUTABLE);
 	     //Preconditions.checkState(StringUtils.isNotBlank(qfTestRuntime), i18nResolver.getText("turnertech.qftest.configurator.error.noExecutable"));
-	    return Collections.singleton(new RequirementImpl(QF_CAPABILITY_PREFIX + "." + qfTestRuntime, true, ".*"));
+	    return Collections.singleton(new RequirementImpl(RunQFTestHelper.QF_CAPABILITY_PREFIX + "." + qfTestRuntime, true, ".*"));
 	}
 
 }
